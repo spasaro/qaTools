@@ -1,0 +1,55 @@
+name: E2E Retry Analyzer
+
+on:
+  schedule:
+    - cron: "0 13 * * *" # 08:00 EST (UTC-5) daily
+  workflow_dispatch: {}
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: e2e-retry-analyzer
+        run: pip install -r requirements.txt
+
+      - name: Run retry analyzer
+        working-directory: e2e-retry-analyzer
+        env:
+          CIRCLE_TOKEN: ${{ secrets.CIRCLE_TOKEN }}
+          NO_COLOR: "1"
+        run: python measure_e2e_retries.py 2>&1 | tee retry-report.txt
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-retry-report-${{ github.run_id }}
+          path: e2e-retry-analyzer/retry-report.txt
+          retention-days: 30
+
+      - name: Check if Friday
+        id: day_check
+        run: |
+          if [ "$(date -u +%u)" = "5" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "send_slack=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send weekly Slack summary
+        if: steps.day_check.outputs.send_slack == 'true'
+        working-directory: e2e-retry-analyzer
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.RA_SLACKBOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.QAE2E_CHANNEL_ID }}
+          REPORT_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPORT_FILE: retry-report.txt
+        run: python send_slack_summary.py

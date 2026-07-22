@@ -1,0 +1,23 @@
+{
+  "name": "qase-updater",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "update": "ts-node --transpile-only scripts/update-cases.ts",
+    "build": "tsc -p .",
+    "get:ids": "ts-node --transpile-only scripts/get-suite-ids.ts",
+    "create:case": "ts-node --transpile-only scripts/create-cases.ts",
+    "send-qase-report": "dotenv -e .env -- npx ts-node qase/send-qase-report.ts qase-test-case-overview.html"
+  },
+  "dependencies": {
+    "@slack/web-api": "^7.5.0",
+    "axios": "^1.13.2",
+    "dotenv-extended": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}

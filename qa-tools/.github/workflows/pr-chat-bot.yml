@@ -1,0 +1,105 @@
+name: PR Chat Bot (Batch Every 30min)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0,30 11-23 * * 1-5"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: pr-chat-bot
+  cancel-in-progress: true
+
+jobs:
+  run-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: America/Buenos_Aires
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Locate bot directory
+        id: locate
+        shell: bash
+        run: |
+          if [ -d "qa-tools/prs-chat-bot" ]; then
+            echo "BOT_DIR=qa-tools/prs-chat-bot" >> "$GITHUB_OUTPUT"
+          elif [ -d "prs-chat-bot" ]; then
+            echo "BOT_DIR=prs-chat-bot" >> "$GITHUB_OUTPUT"
+          else
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node20-${{ hashFiles(format('{0}/package-lock.json', steps.locate.outputs.BOT_DIR)) }}
+          restore-keys: |
+            npm-${{ runner.os }}-node20-
+
+      - name: Restore state cache
+        id: restore_state
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.locate.outputs.BOT_DIR }}/.state
+          key: pr-bot-state-${{ github.run_id }}
+          restore-keys: |
+            pr-bot-state-
+
+      - name: Install dependencies
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+        run: |
+          if [ -f package-lock.json ]; then
+            for i in 1 2 3; do
+              npm ci --no-audit --no-fund && break
+              sleep 10
+            done
+          else
+            for i in 1 2 3; do
+              npm install --no-audit --no-fund && break
+              sleep 10
+            done
+          fi
+
+      - name: Ensure state dir
+        run: mkdir -p "${{ steps.locate.outputs.BOT_DIR }}/.state"
+
+      - name: Run batch
+        id: batchrun
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          REVIEWERS: ${{ secrets.REVIEWERS }}
+          REVIEWERS_PER_PR: ${{ secrets.REVIEWERS_PER_PR }}
+          SLACK_USER_IDS: ${{ secrets.SLACK_USER_IDS }}
+          ALLOWED_REPOS: ${{ secrets.ALLOWED_REPOS }}
+          TARGET_CHANNELS: ${{ secrets.TARGET_CHANNELS }}
+          STATE_DIR: ./.state
+        run: npm run batch
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.locate.outputs.BOT_DIR }}/.state
+          key: pr-bot-state-${{ github.run_id }}
+
+  cleanup-bot-cache:
+    if: always()
+    needs: run-batch
+    uses: ./.github/workflows/clean-up-cache.yml
+    secrets: inherit

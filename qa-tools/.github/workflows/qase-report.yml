@@ -1,0 +1,54 @@
+name: QASE Test Case Report (HTML)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 13 * * 5" # 09:00 Buenos Aires (UTC-3)
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies (qase-updater)
+        working-directory: qase-updater
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Generate QASE HTML report
+        working-directory: qase-updater
+        env:
+          QASE_API_KEY: ${{ secrets.QASE_API_KEY }}
+          QASE_PROJECT_CODE: ${{ secrets.QASE_PROJECT_CODE }}
+        run: |
+          npx tsx qase/generate-qase-report.ts
+
+      - name: Send QASE HTML report to Slack
+        working-directory: qase-updater
+        env:
+          SLACK_QASE_REPORTS_BOT_TOKEN: ${{ secrets.SLACK_QASE_REPORTS_BOT_TOKEN }}
+          SLACK_QASE_REPORTS_CHANNEL_ID: ${{ secrets.SLACK_QASE_REPORTS_CHANNEL_ID }}
+        run: |
+          npx tsx qase/send-qase-report.ts qase-test-case-overview.html
+
+      - name: Upload HTML artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qase-test-case-overview
+          path: qase-updater/qase-test-case-overview.html
+          retention-days: 30

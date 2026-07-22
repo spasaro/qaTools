@@ -1,0 +1,28 @@
+{
+  "name": "prs-chat-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "dev": "npx ts-node app.ts",
+    "bot": "dotenv -e .env -- npx ts-node chat-bot.ts",
+    "adjust-scores": "dotenv -e .env -- ts-node adjust-scores.ts",
+    "batch": "dotenv -e .env -- ts-node batch.ts",
+    "equalize-ooo": "dotenv -e .env -- ts-node equalize-ooo-scores.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@slack/bolt": "^4.5.0",
+    "dotenv": "^17.2.3",
+    "dotenv-cli": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

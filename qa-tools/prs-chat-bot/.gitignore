@@ -1,0 +1,16 @@
+# Node
+node_modules/
+package-lock.json
+
+# Build
+dist/
+
+# Environment
+.env
+
+# Logs
+*.log
+
+# System / Editor files
+.DS_Store
+.vscode/

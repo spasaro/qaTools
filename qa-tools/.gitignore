@@ -1,0 +1,4 @@
+e2e-retry-analyzer/package-lock.json
+e2e-retry-analyzer/venv/
+jira-tools/output/
+flaky-test-report/flaky-report.html

@@ -1,0 +1,146 @@
+name: QASE Chat Bot (Batch Every 30min)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0,30 11-23 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qase-chat-bot
+  cancel-in-progress: true
+
+jobs:
+  run-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: America/Buenos_Aires
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Locate bot directory
+        id: locate
+        shell: bash
+        run: |
+          if [ -d "qa-tools/qase-chat-bot" ]; then
+            echo "BOT_DIR=qa-tools/qase-chat-bot" >> "$GITHUB_OUTPUT"
+          elif [ -d "qase-chat-bot" ]; then
+            echo "BOT_DIR=qase-chat-bot" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Folder qase-chat-bot is missing"
+            exit 1
+          fi
+
+      - name: Restore state cache
+        id: restore_state
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.locate.outputs.BOT_DIR }}/.state
+          key: qase-bot-state-v1-${{ github.ref_name }}
+          restore-keys: |
+            qase-bot-state-v1-
+
+      - name: Install bot dependencies
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        run: |
+          npm install --no-audit --no-fund
+
+      - name: Install shared tool dependencies (gemini, qase-updater)
+        shell: bash
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        run: |
+          if [ -d "../gemini" ]; then
+            cd ../gemini
+            npm install --no-audit --no-fund
+            cd -
+          fi
+
+          if [ -d "../qase-updater" ]; then
+            cd ../qase-updater
+            npm install --no-audit --no-fund
+            cd -
+          fi
+
+      - name: Ensure state dir
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        run: mkdir -p ./.state
+
+      - name: Read previous assignment from state
+        id: previous
+        shell: bash
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        run: |
+          STATE_FILE=".state/qase-bot-state.json"
+          PREV=""
+          if [ -f "$STATE_FILE" ]; then
+            PREV=$(jq -r '.lastReviewer // empty' "$STATE_FILE" || echo "")
+          fi
+          echo "previous_reviewer=$PREV" >> "$GITHUB_OUTPUT"
+
+      - name: Run batch once
+        continue-on-error: true
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        env:
+          QASE_BOT_TOKEN: ${{ secrets.QASE_BOT_TOKEN }}
+          QASE_ALLOWED_REPO: ${{ secrets.QASE_ALLOWED_REPO }}
+          QASE_REVIEWERS_PER_PR: ${{ secrets.QASE_REVIEWERS_PER_PR }}
+          REVIEWERS: ${{ secrets.REVIEWERS }}
+          SLACK_USER_IDS: ${{ secrets.SLACK_USER_IDS }}
+          TARGET_CHANNELS: ${{ secrets.TARGET_CHANNELS }}
+          QASE_STATE_DIR: ./.state
+          QASE_API_KEY: ${{ secrets.QASE_API_KEY }}
+          QASE_PROJECT_CODE: ${{ secrets.QASE_PROJECT_CODE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: npx tsx batch.ts
+
+      - name: Append job summary
+        if: always()
+        shell: bash
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        run: |
+          PREV="${{ steps.previous.outputs.previous_reviewer }}"
+          ASSIGN_FILE=".state/qase-bot-last-assignment.json"
+          LAST=""
+          UNAVAILABLE=""
+          if [ -f "$ASSIGN_FILE" ]; then
+            LAST=$(jq -r '.assignments[-1].assignedNames | join(", ")' "$ASSIGN_FILE" 2>/dev/null || echo "")
+            UNAVAILABLE=$(jq -r '.unavailableReviewers[]? | "- \(.name) (\(.reason | ascii_downcase))"' "$ASSIGN_FILE" 2>/dev/null || echo "")
+            echo "QASE BOT – raw unavailableReviewers from artifact:"
+            jq '.unavailableReviewers' "$ASSIGN_FILE" || echo "no unavailableReviewers field"
+          else
+            echo "QASE BOT – assignment artifact not found"
+          fi
+          {
+            echo "## QASE Chat Bot – Assignment Summary"
+            if [ -n "$PREV" ]; then
+              echo "- Previous reviewer(s): **$PREV**"
+            else
+              echo "- Previous reviewer(s): _none stored_"
+            fi
+            if [ -n "$LAST" ]; then
+              echo "- Last reviewer(s): **$LAST**"
+            else
+              echo "- Last reviewer(s): _none in this run_"
+            fi
+            if [ -n "$UNAVAILABLE" ]; then
+              echo ""
+              echo "### 🚫 Following members are not available"
+              echo "$UNAVAILABLE"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.locate.outputs.BOT_DIR }}/.state
+          key: qase-bot-state-v1-${{ github.ref_name }}-${{ github.run_id }}

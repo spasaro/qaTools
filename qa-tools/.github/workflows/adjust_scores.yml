@@ -1,0 +1,82 @@
+name: PR Chat Bot – Adjust Scores
+
+on:
+  workflow_dispatch:
+    inputs:
+      adjustments:
+        description: "Comma-separated list, e.g. 'Mauro=2,Nico=2'"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-chat-bot-adjust-scores
+  cancel-in-progress: true
+
+jobs:
+  adjust-scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: America/Buenos_Aires
+      ADJUST_SCORES: ${{ github.event.inputs.adjustments }}
+
+    steps:
+      - name: Checkout
+      # mismo que el batch
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Locate bot directory
+        id: locate
+        shell: bash
+        run: |
+          if [ -d "qa-tools/prs-chat-bot" ]; then
+            echo "BOT_DIR=qa-tools/prs-chat-bot" >> "$GITHUB_OUTPUT"
+          elif [ -d "prs-chat-bot" ]; then
+            echo "BOT_DIR=prs-chat-bot" >> "$GITHUB_OUTPUT"
+          else
+            echo "Could not locate prs-chat-bot directory"
+            exit 1
+          fi
+
+      - name: Restore state cache
+        id: restore_state
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.locate.outputs.BOT_DIR }}/.state
+          key: pr-bot-state-${{ github.run_id }}
+          restore-keys: |
+            pr-bot-state-
+
+      - name: Install dependencies
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Ensure state dir
+        run: mkdir -p "${{ steps.locate.outputs.BOT_DIR }}/.state"
+
+      - name: Apply adjustments
+        working-directory: ${{ steps.locate.outputs.BOT_DIR }}
+        env:
+          ADJUST_SCORES: ${{ github.event.inputs.adjustments }}
+          STATE_DIR: ./.state
+        run: npm run adjust-scores
+
+      - name: Save state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.locate.outputs.BOT_DIR }}/.state
+          key: pr-bot-state-${{ github.run_id }}

@@ -1,0 +1,43 @@
+name: SDET On-Call Reminder
+
+on:
+  schedule:
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: America/Buenos_Aires
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: sdet-on-call
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Build
+        working-directory: sdet-on-call
+        run: npm run build
+
+      - name: Run bot
+        working-directory: sdet-on-call
+        env:
+          ON_CALL_BOT_TOKEN: ${{ secrets.ON_CALL_BOT_TOKEN }}
+          SLACK_USER_IDS: ${{ secrets.SLACK_USER_IDS }}
+          ON_CALL_SCHEDULE: ${{ secrets.ON_CALL_SCHEDULE }}
+          SLACK_ON_CALL_CHANNEL_IDS: ${{ secrets.SLACK_ON_CALL_CHANNEL_IDS }}
+        run: npm run start

@@ -1,0 +1,51 @@
+name: Cleanup all PR Bot State (Manual)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup-pr-bot-cache:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Fetch all caches
+        run: |
+          gh api repos/${{ github.repository }}/actions/caches \
+            --paginate \
+            --jq '.actions_caches[]' > all_caches.json
+
+          echo "Caches found:"
+          cat all_caches.json
+
+      - name: Filter PR bot caches
+        run: |
+          cat all_caches.json | jq 'select(.key | test("^pr-bot-state-"))' > pr_caches.json || true
+
+          if [ ! -s pr_caches.json ]; then
+            echo "No pr-bot-state caches found."
+            exit 0
+          fi
+
+          echo "PR bot caches to delete:"
+          cat pr_caches.json
+
+      - name: Delete PR bot caches
+        run: |
+          for id in $(jq -r '.id' pr_caches.json); do
+            echo "Deleting cache id: $id"
+            gh api --method DELETE repos/${{ github.repository }}/actions/caches/$id \
+              || echo "Failed to delete cache id: $id"
+          done
+
+          echo "Cleanup finished."

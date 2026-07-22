@@ -1,0 +1,22 @@
+{
+  "name": "gemini-tool",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "npx ts-node test.ts",
+    "analyze:suite": "npx ts-node runSuiteAnalysis.ts",
+    "gemini:local": "npx ts-node runLocal.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.3.0",
+    "@slack/web-api": "^7.12.0",
+    "axios": "^1.13.2",
+    "csv-parse": "^5.5.6",
+    "dotenv-extended": "^2.9.0",
+    "minimist": "^1.2.8"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

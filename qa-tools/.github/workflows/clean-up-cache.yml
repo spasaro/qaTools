@@ -1,0 +1,64 @@
+name: Cleanup Bot States
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: List cache keys for bots
+        id: list
+        run: |
+          gh api \
+            repos/${{ github.repository }}/actions/caches \
+            --paginate \
+            --jq '.actions_caches[] | select(.key | test("bot-state|pr-bot-state|qase-bot-state"))' > caches.json || true
+
+          if [ ! -s caches.json ]; then
+            echo "No bot caches found."
+            exit 0
+          fi
+
+          echo "Found caches:"
+          cat caches.json
+
+      - name: Clean up old caches (keep last 4)
+        run: |
+          cat caches.json | jq -s 'sort_by(.created_at) | reverse' > sorted.json
+
+          total=$(jq length sorted.json)
+          keep=4
+
+          if [ "$total" -le "$keep" ]; then
+            echo "Nothing to delete: only $total caches found."
+            exit 0
+          fi
+
+          jq ".[$keep:]" sorted.json > delete.json
+          to_delete=$(jq length delete.json)
+
+          echo "Keeping $keep, deleting $to_delete"
+
+          for id in $(jq -r '.[].id' delete.json); do
+            echo "Deleting cache id: $id"
+            gh api \
+              --method DELETE \
+              repos/${{ github.repository }}/actions/caches/$id \
+              || echo "Failed to delete cache id: $id"
+          done
+
+          echo "Cleanup finished."
