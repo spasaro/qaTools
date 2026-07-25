@@ -1,8 +1,6 @@
 name: E2E Retry Analyzer
 
 on:
-  schedule:
-    - cron: "0 13 * * *" # 08:00 EST (UTC-5) daily
   workflow_dispatch: {}
 
 jobs:
