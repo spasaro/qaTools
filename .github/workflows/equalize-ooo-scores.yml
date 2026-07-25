@@ -2,9 +2,6 @@ name: PR Chat Bot – Equalize OOO Scores
 
 on:
   workflow_dispatch: {}
-  schedule:
-    # 22:00 UTC = 19:00 Argentina (UTC-3), weekdays only
-    - cron: "0 22 * * 1-5"
 
 permissions:
   contents: read
